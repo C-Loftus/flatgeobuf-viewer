@@ -1,0 +1,5 @@
+The following program is a maplibre based viewer for flatgeobuf files. The user can either upload a flatgeobuf file and have it processed client-side all in the browser, or point a url to a remote flatgeobuf file and use the cloud native properties of flatgeobuf alongside http range requests to server just the parts of the file that are needed.
+
+The user can click on the map to fetch all the features in a given bounding box. By default the map will show only 1000 features at a time to keep the page from getting too big. The user can also click on a feature to get more details about it. The map will load by default without a bounding box and just show the first 1000 features by default.
+
+This project should use https://github.com/rowanwins/mapbox-gl-flatgeobuf for rendering flatgeobuf files.
