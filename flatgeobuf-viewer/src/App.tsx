@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import {
+  CircleHelp,
   Cloud,
   Copy,
   FileUp,
@@ -122,6 +123,7 @@ function App() {
   const [copyTableState, setCopyTableState] = useState('Copy as GeoJSON')
   const [metadataRows, setMetadataRows] = useState<MetadataRow[]>([])
   const [isMetadataOpen, setIsMetadataOpen] = useState(false)
+  const [isHelpOpen, setIsHelpOpen] = useState(false)
 
   const selectedProperties = useMemo(() => {
     if (!selectedFeature?.properties) return []
@@ -460,10 +462,27 @@ function App() {
         </button>
 
         <div className="brand">
-          <h1>Flatgeobuf Viewer</h1>
+          <div className="brand-title-row">
+            <h1>FlatGeobuf Viewer</h1>
+            <button
+              type="button"
+              className={isHelpOpen ? 'help-button active' : 'help-button'}
+              onClick={() => setIsHelpOpen((isOpen) => !isOpen)}
+              aria-expanded={isHelpOpen}
+              aria-label="Show help"
+              title="Help"
+            >
+              <CircleHelp size={18} />
+            </button>
+          </div>
           <a href="https://github.com/C-Loftus" target="_blank" rel="noreferrer">
             Made by Colton Loftus
           </a>
+          {isHelpOpen ? (
+            <div className="help-message">
+              <p>FlatGeobuf is a cloud native geospatial vector format. By using http range requests, you can load specific geospatial regions directly from a file in a blob store like S3 without having to load the whole file or create an API service. </p>
+            </div>
+          ) : null}
         </div>
 
         <form className="control-panel" onSubmit={handleUrlSubmit}>

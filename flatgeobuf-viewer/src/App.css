@@ -67,6 +67,13 @@
   gap: 5px;
 }
 
+.brand-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-right: 38px;
+}
+
 .status-icon {
   display: grid;
   flex: 0 0 auto;
@@ -84,9 +91,53 @@
 }
 
 .brand h1 {
+  min-width: 0;
   max-width: 290px;
   font-size: 26px;
   line-height: 1.05;
+}
+
+.help-button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 8px;
+  color: #475569;
+  background: rgba(255, 255, 255, 0.58);
+  transition:
+    transform 160ms ease,
+    color 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.help-button:hover,
+.help-button.active {
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(15, 23, 42, 0.18);
+}
+
+.help-button:hover {
+  transform: translateY(-1px);
+}
+
+.help-message {
+  margin-top: 7px;
+  padding: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 8px;
+  color: #334155;
+  background: rgba(255, 255, 255, 0.58);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.help-message p {
+  margin: 0;
 }
 
 .brand a {
