@@ -17,7 +17,12 @@ import maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl'
 import FlatGeobuf from 'mapbox-gl-flatgeobuf'
 import { geojson } from 'flatgeobuf'
+import { fromFeature as geojsonFromFeature } from 'flatgeobuf/lib/mjs/geojson/feature.js'
+import { HttpReader } from 'flatgeobuf/lib/mjs/http-reader.js'
+import type { Feature as FlatBufferFeature } from 'flatgeobuf/lib/mjs/flat-geobuf/feature.js'
 import type { HeaderMeta } from 'flatgeobuf/lib/mjs/header-meta.js'
+import { streamSearch } from 'flatgeobuf/lib/mjs/packedrtree.js'
+import type { Rect } from 'flatgeobuf/lib/mjs/packedrtree.js'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import './App.css'
 
@@ -50,6 +55,18 @@ type FlatGeobufInstance = {
   enableRequests: () => void
 }
 
+type RangeClient = {
+  getRange: (start: number, length: number, minReqLength: number, purpose: string) => Promise<ArrayBuffer>
+}
+
+type LimitedHttpReader = {
+  headerClient: RangeClient
+  header: HeaderMeta
+  lengthBeforeTree: () => number
+  buildFeatureClient: (nocache: boolean) => RangeClient
+  readFeature: (featureClient: RangeClient, featureOffset: number, minFeatureReqLength: number) => Promise<FlatBufferFeature>
+}
+
 type MetadataRow = {
   key: string
   value: string
@@ -75,6 +92,7 @@ const SELECTED_POINT_LAYER_ID = 'fgb-selected-point'
 const TILED_FILL_LAYER_ID = 'fgb-tiled-fill'
 const TILED_LINE_LAYER_ID = 'fgb-tiled-line'
 const TILED_POINT_LAYER_ID = 'fgb-tiled-point'
+const FEATURE_RANGE_GAP_THRESHOLD = 262_144
 
 const emptyCollection: FeatureCollection = {
   type: 'FeatureCollection',
@@ -634,17 +652,95 @@ async function collectFeatures(
   onMetadata?: (metadata: HeaderMeta) => void,
 ): Promise<Feature[]> {
   const rect = { minX: bbox[0], minY: bbox[1], maxX: bbox[2], maxY: bbox[3] }
+  const boundedLimit = Math.max(0, Math.floor(limit))
 
   if (source.kind === 'file') {
     const collection = geojson.deserialize(source.bytes, rect, onMetadata) as FeatureCollection
-    return collection.features.slice(0, limit)
+    return collection.features.slice(0, boundedLimit)
+  }
+
+  return collectRemoteFeatures(source.url, rect, boundedLimit, onMetadata)
+}
+
+async function collectRemoteFeatures(
+  url: string,
+  rect: Rect,
+  limit: number,
+  onMetadata?: (metadata: HeaderMeta) => void,
+): Promise<Feature[]> {
+  if (limit === 0) return []
+
+  const reader = await HttpReader.open(url, false)
+  onMetadata?.(reader.header)
+
+  if (reader.header.indexNodeSize <= 0) {
+    return collectRemoteFeaturesFromIterator(url, rect, limit)
   }
 
   const features: Feature[] = []
-  for await (const feature of geojson.deserialize(source.url, rect, onMetadata) as AsyncGenerator<Feature>) {
+  const limitedReader = reader as unknown as LimitedHttpReader
+  const readIndexNode = (treeOffset: number, size: number) =>
+    limitedReader.headerClient.getRange(reader.lengthBeforeTree() + treeOffset, size, 0, 'index')
+  let batch: FeatureRange[] = []
+
+  for await (const [featureOffset, featureIndex, featureLength] of streamSearch(
+    reader.header.featuresCount,
+    reader.header.indexNodeSize,
+    rect,
+    readIndexNode,
+  )) {
+    const range: FeatureRange = [featureOffset, featureLength ?? 4, featureIndex]
+    const previous = batch.at(-1)
+
+    if (previous && range[0] - (previous[0] + previous[1]) > FEATURE_RANGE_GAP_THRESHOLD) {
+      features.push(...(await readFeatureBatch(limitedReader, batch, limit - features.length)))
+      batch = []
+      if (features.length >= limit) break
+    }
+
+    batch.push(range)
+
+    if (features.length + batch.length >= limit) {
+      features.push(...(await readFeatureBatch(limitedReader, batch, limit - features.length)))
+      batch = []
+      break
+    }
+  }
+
+  if (features.length < limit && batch.length > 0) {
+    features.push(...(await readFeatureBatch(limitedReader, batch, limit - features.length)))
+  }
+
+  return features
+}
+
+async function collectRemoteFeaturesFromIterator(url: string, rect: Rect, limit: number): Promise<Feature[]> {
+  const features: Feature[] = []
+  for await (const feature of geojson.deserialize(url, rect) as AsyncGenerator<Feature>) {
     features.push(feature)
     if (features.length >= limit) break
   }
+  return features
+}
+
+type FeatureRange = [offset: number, length: number, index: number]
+
+async function readFeatureBatch(reader: LimitedHttpReader, batch: FeatureRange[], limit: number): Promise<Feature[]> {
+  if (limit <= 0 || batch.length === 0) return []
+
+  const features: Feature[] = []
+  const featureClient = reader.buildFeatureClient(false)
+  const [firstOffset] = batch[0]
+  const [lastOffset, lastLength] = batch[batch.length - 1]
+  let minFeatureReqLength = lastOffset + lastLength - firstOffset
+
+  for (const [featureOffset, , featureIndex] of batch) {
+    if (features.length >= limit) break
+    const flatBufferFeature = await reader.readFeature(featureClient, featureOffset, minFeatureReqLength)
+    features.push(geojsonFromFeature(featureIndex, flatBufferFeature, reader.header) as Feature)
+    minFeatureReqLength = 0
+  }
+
   return features
 }
 
