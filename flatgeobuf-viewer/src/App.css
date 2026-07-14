@@ -69,9 +69,15 @@
 
 .brand-title-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   padding-right: 38px;
+}
+
+.brand-logo {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 42px;
 }
 
 .status-icon {

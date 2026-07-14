@@ -1,3 +1,8 @@
+declare module '*.svg' {
+  const src: string
+  export default src
+}
+
 declare module 'mapbox-gl-flatgeobuf' {
   export default class FlatGeobuf {
     constructor(
