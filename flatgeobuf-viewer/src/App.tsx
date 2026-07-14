@@ -60,7 +60,6 @@ type Basemap = 'standard' | 'satellite'
 const SAMPLE_URL = 'https://flatgeobuf.org/test/data/UScounties.fgb'
 const DEFAULT_FEATURE_LIMIT = 1000
 const QUERY_PIXELS = 150
-const WORLD_BBOX: BBox = [-180, -90, 180, 90]
 const COLORADO_BBOX: BBox = [-109.2, 36.85, -101.85, 41.15]
 const COLORADO_BBOX_TEXT = '-109.2, 36.85, -101.85, 41.15'
 const DISPLAY_CRS = 'EPSG:4326'
@@ -101,7 +100,8 @@ function App() {
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null)
   const [hasMapMoved, setHasMapMoved] = useState(false)
   const [activeFeatureTab, setActiveFeatureTab] = useState<'features' | 'fields'>('features')
-  const [copyState, setCopyState] = useState('Copy GeoJSON')
+  const [copyState, setCopyState] = useState('Copy as GeoJSON')
+  const [copyTableState, setCopyTableState] = useState('Copy as GeoJSON')
   const [metadataRows, setMetadataRows] = useState<MetadataRow[]>([])
   const [isMetadataOpen, setIsMetadataOpen] = useState(false)
 
@@ -216,8 +216,7 @@ function App() {
 
     try {
       sourceRef.current = nextSource
-      const defaultBbox = getInitialBbox(nextSource)
-      const queryBbox = defaultBbox ?? WORLD_BBOX
+      const queryBbox = getInitialBbox(nextSource, map, queryBoundsText)
       setQueryBoundsText(formatBbox(queryBbox))
       const nextFeatures = await collectFeatures(nextSource, queryBbox, featureLimit, (metadata) => setMetadataRows(formatMetadataRows(metadata)))
       const nextIdProperty = inferIdProperty(nextFeatures) ?? inferredIdPropertyRef.current
@@ -292,7 +291,7 @@ function App() {
   function selectFeature(feature: Feature | null) {
     setSelectedFeature(feature)
     setSelectedData(feature)
-    setCopyState('Copy GeoJSON')
+    setCopyState('Copy as GeoJSON')
     if (!feature) setActiveFeatureTab('features')
   }
 
@@ -402,10 +401,30 @@ function App() {
     try {
       await navigator.clipboard.writeText(JSON.stringify(selectedFeature, null, 2))
       setCopyState('Copied')
-      window.setTimeout(() => setCopyState('Copy GeoJSON'), 1400)
+      window.setTimeout(() => setCopyState('Copy as GeoJSON'), 1400)
     } catch {
       setCopyState('Copy failed')
-      window.setTimeout(() => setCopyState('Copy GeoJSON'), 1800)
+      window.setTimeout(() => setCopyState('Copy as GeoJSON'), 1800)
+    }
+  }
+
+  async function copyFeatureTable() {
+    try {
+      await navigator.clipboard.writeText(
+        JSON.stringify(
+          {
+            type: 'FeatureCollection',
+            features,
+          },
+          null,
+          2,
+        ),
+      )
+      setCopyTableState('Copied')
+      window.setTimeout(() => setCopyTableState('Copy as GeoJSON'), 1400)
+    } catch {
+      setCopyTableState('Copy failed')
+      window.setTimeout(() => setCopyTableState('Copy as GeoJSON'), 1800)
     }
   }
 
@@ -522,7 +541,15 @@ function App() {
                 {copyState}
               </button>
             </div>
-          ) : null}
+          ) : (
+            <div className="selected-actions">
+              <div className="geometry-chip">{features.length.toLocaleString()} features</div>
+              <button type="button" className="copy-button" onClick={copyFeatureTable} disabled={features.length === 0}>
+                <Copy size={15} />
+                {copyTableState}
+              </button>
+            </div>
+          )}
 
           <div className="feature-tabs" role="tablist" aria-label="Feature table tabs">
             <button
@@ -602,12 +629,11 @@ function App() {
 
 async function collectFeatures(
   source: DatasetSource,
-  bbox?: BBox,
+  bbox: BBox,
   limit = DEFAULT_FEATURE_LIMIT,
   onMetadata?: (metadata: HeaderMeta) => void,
 ): Promise<Feature[]> {
-  const queryBbox = bbox ?? WORLD_BBOX
-  const rect = { minX: queryBbox[0], minY: queryBbox[1], maxX: queryBbox[2], maxY: queryBbox[3] }
+  const rect = { minX: bbox[0], minY: bbox[1], maxX: bbox[2], maxY: bbox[3] }
 
   if (source.kind === 'file') {
     const collection = geojson.deserialize(source.bytes, rect, onMetadata) as FeatureCollection
@@ -682,8 +708,26 @@ function parseBbox(value: string): BBox | null {
   return [minX, minY, maxX, maxY]
 }
 
-function getInitialBbox(source: DatasetSource) {
-  return source.kind === 'url' && source.url === SAMPLE_URL ? COLORADO_BBOX : undefined
+function getInitialBbox(source: DatasetSource, map: MapLibreMap, boundsText: string) {
+  if (source.kind === 'url' && source.url === SAMPLE_URL) return COLORADO_BBOX
+  if (source.kind === 'url') return bboxFromMapCenter(map)
+  return parseBbox(boundsText) ?? bboxFromMapBounds(map)
+}
+
+function bboxFromMapBounds(map: MapLibreMap): BBox {
+  const bounds = map.getBounds()
+  return [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]
+}
+
+function bboxFromMapCenter(map: MapLibreMap): BBox {
+  const center = map.getCenter()
+  const bounds = map.getBounds()
+  const canvas = map.getCanvas()
+  const lngSpan = Math.abs(bounds.getEast() - bounds.getWest())
+  const latSpan = Math.abs(bounds.getNorth() - bounds.getSouth())
+  const halfLng = Math.max((lngSpan / canvas.clientWidth) * QUERY_PIXELS * 0.5, 0.0005)
+  const halfLat = Math.max((latSpan / canvas.clientHeight) * QUERY_PIXELS * 0.5, 0.0005)
+  return [center.lng - halfLng, center.lat - halfLat, center.lng + halfLng, center.lat + halfLat]
 }
 
 function applyBasemap(map: MapLibreMap | null, basemap: Basemap) {

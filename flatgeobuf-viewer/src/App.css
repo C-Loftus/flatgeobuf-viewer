@@ -564,6 +564,12 @@
   background: rgba(255, 255, 255, 0.86);
 }
 
+.copy-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
 .feature-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
